@@ -1,1 +1,29 @@
-ha
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add a ViewSonic ViewBoard",
+        "description": "Enter the board's IP address. Network control (port 5000) must be reachable from Home Assistant.",
+        "data": {
+          "host": "IP address",
+          "name": "Name (optional, e.g. Room 112)"
+        }
+      },
+      "reconfigure": {
+        "title": "Change ViewBoard IP address",
+        "data": {
+          "host": "IP address"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not connect to port 5000 at that address. Check the IP and that the board is on.",
+      "not_viewboard": "Something answered on port 5000, but it did not respond like a ViewBoard."
+    },
+    "abort": {
+      "already_configured": "This ViewBoard is already added. Its IP address has been updated.",
+      "reconfigure_successful": "IP address updated.",
+      "wrong_device": "That IP address belongs to a different ViewBoard."
+    }
+  }
+}
