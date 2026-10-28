@@ -1,0 +1,11 @@
+{
+  "domain": "viewsonic_viewboard",
+  "name": "ViewSonic ViewBoard",
+  "codeowners": [],
+  "config_flow": true,
+  "documentation": "https://manuals.viewsonic.com/IFP50-3_RS-232_Protocols",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "requirements": [],
+  "version": "1.0.0"
+}
