@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from homeassistant.components.button import ButtonEntity
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import KEYPAD_KEYS
@@ -25,7 +27,10 @@ KEY_INFO = {
 async def async_setup_entry(
     hass: HomeAssistant, entry: ViewBoardConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
-    async_add_entities(ViewBoardKeyButton(entry.runtime_data, key) for key in KEYPAD_KEYS)
+    coordinator = entry.runtime_data
+    async_add_entities(
+        [*(ViewBoardKeyButton(coordinator, key) for key in KEYPAD_KEYS), ViewBoardSearchButton(coordinator, "search")]
+    )
 
 
 class ViewBoardKeyButton(ViewBoardEntity, ButtonEntity):
@@ -36,3 +41,25 @@ class ViewBoardKeyButton(ViewBoardEntity, ButtonEntity):
 
     async def async_press(self) -> None:
         await self.coordinator.async_set("A", self._value)
+
+
+class ViewBoardSearchButton(ViewBoardEntity, ButtonEntity):
+    """Search the network for this board by MAC right now (it also happens automatically)."""
+
+    _attr_name = "Search network for board"
+    _attr_icon = "mdi:magnify-scan"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    @property
+    def available(self) -> bool:
+        return self.coordinator.last_update_success  # most useful exactly when the board is unreachable
+
+    async def async_press(self) -> None:
+        if self.coordinator.data.get("online"):
+            return  # already reachable at its current address
+        if not await self.coordinator.async_relocate(force=True):
+            raise HomeAssistantError(
+                f"Couldn't find {self.coordinator.config_entry.title} on the network. "
+                "It may be off, unplugged, or on a different subnet from Home Assistant."
+            )
+        await self.coordinator.async_refresh()

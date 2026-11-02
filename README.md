@@ -18,8 +18,35 @@ Restart Home Assistant.
 *Settings → Devices & services → Add integration → ViewSonic ViewBoard*, then enter the IP
 address and, optionally, a name such as "Room 112". Repeat for each board.
 
-If a board's IP address changes: open the board's entry, choose *⋮ → Reconfigure*, and enter the
-new address. The board is recognized by its serial number, so its entities and automations keep working.
+## When a board's IP address changes
+
+Boards are identified by MAC address; the IP is only their last-known address. If a board stops
+answering there, or a different board answers at that address, the integration searches the
+network for its MAC and updates the address on its own. Entities and automations keep working.
+
+How the search works:
+
+1. It looks in Home Assistant's ARP cache, the host's list of which hardware address is at which IP (instant).
+2. Otherwise it sweeps the subnet(s) Home Assistant is on. One empty packet goes to each address so the
+   host learns every device's MAC, then each device with port 5000 open is asked for the MAC it reports.
+   This takes about 10–20 seconds on a /22. One sweep is shared by all boards, so many boards moving at
+   once (for example after a network outage) cost a single scan.
+
+An unreachable board is searched for at most once every 2 minutes. To search right away, press the
+board's **Search network for board** button (under Diagnostic). The **IP address** sensor shows the
+board's current address, and a warning such as "ViewBoard Room 112 moved from 10.3.12.80 to
+10.3.12.78" is written to the Home Assistant log whenever a board is found at a new address.
+
+Limitations:
+
+- Only the subnet(s) Home Assistant itself is connected to are searched (at most 4,096 addresses
+  each), never public addresses. A board on another subnet behind a router can't be found by MAC.
+  Use *⋮ → Reconfigure* to enter its new address.
+- A board that is off, unplugged or asleep with networking off can't be found until it's back.
+- Home Assistant needs the "network" integration (part of a default install) to know its subnets.
+
+You can still change an address by hand: open the board's entry, choose *⋮ → Reconfigure*, and enter
+the new address.
 
 ## What you get for each board
 
@@ -41,6 +68,8 @@ new address. The board is recognized by its serial number, so its entities and a
 | Internal temperature | Sensor | Diagnostic |
 | Operating hours | Sensor | Diagnostic |
 | Network control | Binary sensor | Off when the board isn't answering on port 5000 |
+| IP address | Sensor | Diagnostic; updates when the board is found at a new address |
+| Search network for board | Button | Diagnostic; searches for the board's MAC right away |
 
 The board is polled every 10 seconds.
 

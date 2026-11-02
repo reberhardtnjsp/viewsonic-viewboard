@@ -6,6 +6,7 @@ DOMAIN = "viewsonic_viewboard"
 
 DEFAULT_PORT = 5000
 SCAN_INTERVAL = timedelta(seconds=10)
+SEARCH_COOLDOWN = 120  # seconds between automatic network searches for an unreachable board
 
 CONF_MAC = "mac"
 CONF_ARP_MAC = "arp_mac"

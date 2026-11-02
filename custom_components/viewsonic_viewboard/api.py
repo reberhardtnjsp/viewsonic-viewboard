@@ -32,8 +32,30 @@ STATUS_COMMANDS = {
     "power_lock": "o",
     "temperature": "0",
     "operating_hours": "1",
+    "mac": "5",  # lets the coordinator notice when a different board has taken this IP
 }
 INFO_COMMANDS = {"model": "4", "mac": "5", "serial": "7", "firmware": "8"}
+
+
+def norm_mac(mac: str | None) -> str | None:
+    """'20-9B-E6-2E-A9-92', '2:15:...' or '209be62ea992' -> '20:9b:e6:2e:a9:92'. None if invalid,
+    blank, broadcast or multicast."""
+    if not mac:
+        return None
+    mac = mac.strip().lower()
+    if len(mac) == 12 and all(c in "0123456789abcdef" for c in mac):
+        parts = [mac[i : i + 2] for i in range(0, 12, 2)]
+    else:
+        parts = mac.replace("-", ":").split(":")
+    try:
+        if len(parts) != 6 or any(not 1 <= len(p) <= 2 for p in parts):
+            return None
+        octets = [int(p, 16) for p in parts]
+    except ValueError:
+        return None
+    if octets[0] & 1 or not any(octets):
+        return None
+    return ":".join(f"{o:02x}" for o in octets)
 
 
 class ViewBoardError(Exception):
@@ -123,15 +145,17 @@ class ViewBoardClient:
     async def get_device_info(self) -> dict[str, str | None]:
         """Model, MAC, serial and firmware, plus power to confirm it speaks the protocol."""
         info = await self.query({"power": "l", **INFO_COMMANDS})
-        if mac := info.get("mac"):
-            mac = mac.lower()
-            info["mac"] = ":".join(mac[i : i + 2] for i in range(0, 12, 2)) if len(mac) == 12 else None
+        info["mac"] = norm_mac(info.get("mac"))
         return info
+
+    async def get_reported_mac(self) -> str | None:
+        """The MAC the board reports; None if whatever is at this address isn't a ViewBoard."""
+        return norm_mac((await self.query({"mac": "5"}))["mac"])
 
     async def get_status(self) -> dict:
         """Current state, parsed into Python types."""
         raw = await self.query(STATUS_COMMANDS)
-        status: dict = {}
+        status: dict = {"mac": norm_mac(raw["mac"])}
         for key in ("power", "mute", "backlight", "button_lock", "power_lock"):
             status[key] = raw[key] == "001" if raw[key] is not None else None
         for key in ("volume", "brightness", "contrast", "temperature", "operating_hours"):

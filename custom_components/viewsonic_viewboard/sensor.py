@@ -35,6 +35,9 @@ SENSORS = (
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
     SensorEntityDescription(key="input", name="Current input", icon="mdi:video-input-hdmi"),
+    SensorEntityDescription(
+        key="ip_address", name="IP address", icon="mdi:ip-network", entity_category=EntityCategory.DIAGNOSTIC
+    ),
 )
 
 
@@ -50,7 +53,15 @@ class ViewBoardSensor(ViewBoardEntity, SensorEntity):
         self.entity_description = description
 
     @property
+    def available(self) -> bool:
+        if self.entity_description.key == "ip_address":
+            return self.coordinator.last_update_success  # last-known address, even while unreachable
+        return super().available
+
+    @property
     def native_value(self):
+        if self.entity_description.key == "ip_address":
+            return self.coordinator.client.host
         value = self.coordinator.data.get(self.entity_description.key)
         if self.entity_description.key == "input" and value:
             return INPUT_SOURCES.get(value, f"Unknown ({value})")
