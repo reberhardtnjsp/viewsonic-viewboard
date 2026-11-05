@@ -9,8 +9,8 @@ and shows up as its own device.
 **Manually:** copy the `custom_components/viewsonic_viewboard` folder into your Home Assistant
 `config/custom_components/` folder (create it if it doesn't exist), then restart Home Assistant.
 
-**With HACS:** put this folder in a Git repository, then in HACS choose
-*⋮ → Custom repositories*, paste the repository URL, pick type *Integration*, and install.
+**With HACS:** in HACS choose
+*⋮ → Custom repositories*, paste `https://github.com/reberhardtnjsp/viewsonic-viewboard`, pick type *Integration*, and install.
 Restart Home Assistant.
 
 ## Add a board
@@ -27,21 +27,29 @@ network for its MAC and updates the address on its own. Entities and automations
 How the search works:
 
 1. It looks in Home Assistant's ARP cache, the host's list of which hardware address is at which IP (instant).
-2. Otherwise it sweeps the subnet(s) Home Assistant is on. One empty packet goes to each address so the
-   host learns every device's MAC, then each device with port 5000 open is asked for the MAC it reports.
-   This takes about 10–20 seconds on a /22. One sweep is shared by all boards, so many boards moving at
-   once (for example after a network outage) cost a single scan.
+2. Otherwise it sweeps the network: the subnet(s) Home Assistant is on, the /24 around every added
+   board's last address, and any networks listed in a board's options (see below). Each device with
+   port 5000 open is asked for the MAC it reports, which also works through a router. This takes about
+   10–20 seconds for a /22. One sweep is shared by all boards, so many boards moving at once (for
+   example after a network outage) cost a single scan.
 
 An unreachable board is searched for at most once every 2 minutes. To search right away, press the
 board's **Search network for board** button (under Diagnostic). The **IP address** sensor shows the
 board's current address, and a warning such as "ViewBoard Room 112 moved from 10.3.12.80 to
 10.3.12.78" is written to the Home Assistant log whenever a board is found at a new address.
 
+### Boards on a different network from Home Assistant
+
+If Home Assistant is on a different network from the boards (for example Home Assistant at
+192.168.100.50 and the boards on 10.3.12.0/22), tell it where the boards are: open any ViewBoard's
+entry, choose **Configure**, and enter the boards' network, such as `10.3.12.0/22`. Separate several
+with commas. Networks set on one board are searched for every board, so you only need to set this once.
+Without it, only the /24 around each board's old address is searched, so a board that moves from
+10.3.12.x to 10.3.13.x might not be found.
+
 Limitations:
 
-- Only the subnet(s) Home Assistant itself is connected to are searched (at most 4,096 addresses
-  each), never public addresses. A board on another subnet behind a router can't be found by MAC.
-  Use *⋮ → Reconfigure* to enter its new address.
+- Only private networks of at most 4,096 addresses (a /20) each are searched, never public addresses.
 - A board that is off, unplugged or asleep with networking off can't be found until it's back.
 - Home Assistant needs the "network" integration (part of a default install) to know its subnets.
 

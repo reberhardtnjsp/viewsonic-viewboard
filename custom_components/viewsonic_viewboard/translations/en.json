@@ -25,5 +25,19 @@
       "reconfigure_successful": "IP address updated.",
       "wrong_device": "That IP address belongs to a different ViewBoard."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Networks to search",
+        "description": "When this board's IP address changes, Home Assistant searches its own network and the /24 around each board's last address. If boards are on a different network from Home Assistant and can move further than that, list their networks here, e.g. 10.3.12.0/22. These networks are searched for every ViewBoard.",
+        "data": {
+          "search_networks": "Networks (comma-separated)"
+        }
+      }
+    },
+    "error": {
+      "invalid_network": "Enter private IPv4 networks such as 10.3.12.0/22, each no larger than a /20 (4,096 addresses)."
+    }
   }
 }

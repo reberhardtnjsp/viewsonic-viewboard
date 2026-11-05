@@ -6,11 +6,13 @@ from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.const import CONF_HOST, CONF_NAME
+from homeassistant.core import callback
 
 from .api import ViewBoardClient, ViewBoardConnectionError
-from .const import CONF_MAC, DOMAIN
+from .const import CONF_MAC, CONF_SEARCH_NETWORKS, DOMAIN
+from .discovery import parse_network
 
 
 async def _probe(host: str) -> tuple[dict[str, Any] | None, str | None]:
@@ -36,6 +38,11 @@ def _entry_data(host: str, info: dict[str, Any]) -> dict[str, Any]:
 
 class ViewBoardConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 1
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> ViewBoardOptionsFlow:
+        return ViewBoardOptionsFlow()
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
@@ -77,5 +84,30 @@ class ViewBoardConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="reconfigure",
             data_schema=vol.Schema({vol.Required(CONF_HOST, default=entry.data[CONF_HOST]): str}),
+            errors=errors,
+        )
+
+
+class ViewBoardOptionsFlow(OptionsFlow):
+    """Extra networks to search when a board's IP changes (for boards behind a router)."""
+
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
+        current = ", ".join(self.config_entry.options.get(CONF_SEARCH_NETWORKS, []))
+        if user_input is not None:
+            current = user_input.get(CONF_SEARCH_NETWORKS, "")
+            networks = []
+            for text in current.replace(",", " ").split():
+                try:
+                    networks.append(str(parse_network(text)))
+                except ValueError:
+                    errors[CONF_SEARCH_NETWORKS] = "invalid_network"
+                    break
+            if not errors:
+                return self.async_create_entry(data={CONF_SEARCH_NETWORKS: list(dict.fromkeys(networks))})
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema({vol.Optional(CONF_SEARCH_NETWORKS, default=current): str}),
             errors=errors,
         )

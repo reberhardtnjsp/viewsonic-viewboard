@@ -4,9 +4,10 @@
   "codeowners": [],
   "config_flow": true,
   "dependencies": ["network"],
-  "documentation": "https://manuals.viewsonic.com/IFP50-3_RS-232_Protocols",
+  "documentation": "https://github.com/reberhardtnjsp/viewsonic-viewboard",
   "integration_type": "device",
   "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/reberhardtnjsp/viewsonic-viewboard/issues",
   "requirements": [],
-  "version": "1.1.0"
+  "version": "1.2.0"
 }

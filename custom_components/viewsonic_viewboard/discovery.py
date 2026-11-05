@@ -1,8 +1,10 @@
 """Find a ViewBoard on the local network by MAC address after its IP has changed.
 
 1. Look in the ARP cache.
-2. Otherwise sweep the subnet(s) Home Assistant is on: an empty UDP packet to every address makes
-   the OS ARP-resolve them all, then every host with port 5000 open is asked for the MAC it reports.
+2. Otherwise sweep the subnet(s) Home Assistant is on, plus the /24 around every added board's
+   last-known address and any networks set in a board's options (for boards behind a router).
+   An empty UDP packet to every local address makes the OS ARP-resolve them all, then every host
+   with port 5000 open is asked for the MAC it reports, which also works across a router.
 The sweep is shared by all boards and cached briefly, so several boards moving at once
 (e.g. after a network outage) cost one scan.
 """
@@ -18,14 +20,16 @@ import subprocess
 import time
 
 from homeassistant.components import network
+from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
 
 from .api import ViewBoardClient, ViewBoardError, norm_mac
-from .const import DEFAULT_PORT, DOMAIN
+from .const import CONF_SEARCH_NETWORKS, DEFAULT_PORT, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-MAX_SCAN_HOSTS = 4096  # never sweep more than a /20 per interface
+MAX_SCAN_HOSTS = 4096  # never sweep more than a /20 per network
+MAX_TOTAL_HOSTS = 16384
 SCAN_CACHE_SECONDS = 60
 
 _IP_RE = re.compile(r"(?<![\d.])(\d{1,3}(?:\.\d{1,3}){3})(?![\d.])")
@@ -56,9 +60,20 @@ def read_arp_table() -> dict[str, str]:
     return table
 
 
-async def _local_hosts(hass: HomeAssistant) -> list[str]:
-    """Every address on the private IPv4 subnets of Home Assistant's enabled network adapters."""
-    hosts: list[str] = []
+def parse_network(text: str) -> ipaddress.IPv4Network:
+    """A private IPv4 network of at most MAX_SCAN_HOSTS addresses, e.g. "10.3.12.0/22".
+    Raises ValueError otherwise."""
+    net = ipaddress.ip_network(text.strip(), strict=False)
+    if not isinstance(net, ipaddress.IPv4Network) or not net.is_private or net.is_loopback:
+        raise ValueError("not a private IPv4 network")
+    if net.num_addresses > MAX_SCAN_HOSTS:
+        raise ValueError("network too large")
+    return net
+
+
+async def _local_networks(hass: HomeAssistant) -> dict[ipaddress.IPv4Network, str]:
+    """{network: this host's address on it} for the private IPv4 subnets of the enabled adapters."""
+    nets = {}
     for adapter in await network.async_get_adapters(hass):
         if not adapter["enabled"]:
             continue
@@ -68,8 +83,43 @@ async def _local_hosts(hass: HomeAssistant) -> list[str]:
                 continue
             if net.num_addresses > MAX_SCAN_HOSTS:
                 net = ipaddress.ip_network(f"{addr['address']}/{33 - MAX_SCAN_HOSTS.bit_length()}", strict=False)
-            hosts.extend(str(h) for h in net.hosts() if str(h) != addr["address"])
-    return list(dict.fromkeys(hosts))
+            nets[net] = addr["address"]
+    return nets
+
+
+def _remote_networks(hass: HomeAssistant) -> list[ipaddress.IPv4Network]:
+    """Networks to search beyond the local ones: those set in any board's options, and the /24
+    around every board's last-known address (boards behind a router usually stay nearby)."""
+    nets = []
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        for text in entry.options.get(CONF_SEARCH_NETWORKS, []):
+            try:
+                nets.append(parse_network(text))
+            except ValueError:
+                _LOGGER.warning("Ignoring invalid network to search: %s", text)
+        try:
+            nets.append(parse_network(f"{entry.data[CONF_HOST]}/24"))
+        except (KeyError, ValueError):
+            pass
+    return nets
+
+
+async def _search_hosts(hass: HomeAssistant) -> tuple[list[str], list[str]]:
+    """(addresses to search, the subset on Home Assistant's own subnets)."""
+    local = await _local_networks(hass)
+    own = set(local.values())
+    hosts: list[str] = []
+    for net in local:
+        hosts.extend(str(h) for h in net.hosts() if str(h) not in own)
+    local_hosts = list(dict.fromkeys(hosts))
+    for net in _remote_networks(hass):
+        if not any(net.subnet_of(n) for n in local):
+            hosts.extend(str(h) for h in net.hosts())
+    hosts = list(dict.fromkeys(hosts))
+    if len(hosts) > MAX_TOTAL_HOSTS:
+        _LOGGER.warning("Only searching the first %d of %d addresses", MAX_TOTAL_HOSTS, len(hosts))
+        hosts = hosts[:MAX_TOTAL_HOSTS]
+    return hosts, local_hosts
 
 
 def _poke_all(hosts: list[str]) -> None:
@@ -103,13 +153,13 @@ async def _reported_mac(host: str, sem: asyncio.Semaphore) -> str | None:
 
 
 async def _async_sweep(hass: HomeAssistant) -> dict[str, set[str]]:
-    """{ip: MACs seen for it} for every ViewBoard found on the local subnet(s)."""
-    hosts = await _local_hosts(hass)
+    """{ip: MACs seen for it} for every ViewBoard found on the searched networks."""
+    hosts, local_hosts = await _search_hosts(hass)
     if not hosts:
-        _LOGGER.warning("Couldn't determine a local network to search for ViewBoards")
+        _LOGGER.warning("Couldn't determine a network to search for ViewBoards")
         return {}
     _LOGGER.debug("Searching %d addresses for ViewBoards", len(hosts))
-    await hass.async_add_executor_job(_poke_all, hosts)
+    await hass.async_add_executor_job(_poke_all, local_hosts)  # ARP only resolves local addresses
     port_sem = asyncio.Semaphore(128)
     open_flags = await asyncio.gather(*(_port_open(h, port_sem) for h in hosts))
     open_hosts = [h for h, ok in zip(hosts, open_flags, strict=True) if ok]
@@ -137,7 +187,7 @@ async def async_find_board(hass: HomeAssistant, macs: set[str]) -> str | None:
             except ViewBoardError:
                 pass
 
-    # 2. Shared sweep of the local subnet(s)
+    # 2. Shared sweep of the local subnet(s) and the boards' own networks
     data = hass.data.setdefault(DOMAIN, {})
     lock = data.setdefault("scan_lock", asyncio.Lock())
     async with lock:

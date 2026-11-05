@@ -10,6 +10,7 @@ SEARCH_COOLDOWN = 120  # seconds between automatic network searches for an unrea
 
 CONF_MAC = "mac"
 CONF_ARP_MAC = "arp_mac"
+CONF_SEARCH_NETWORKS = "search_networks"  # extra subnets to search, for boards behind a router
 
 # Input source codes (Set ", Get j) -> friendly names
 INPUT_SOURCES = {

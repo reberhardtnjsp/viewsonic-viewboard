@@ -60,6 +60,6 @@ class ViewBoardSearchButton(ViewBoardEntity, ButtonEntity):
         if not await self.coordinator.async_relocate(force=True):
             raise HomeAssistantError(
                 f"Couldn't find {self.coordinator.config_entry.title} on the network. "
-                "It may be off, unplugged, or on a different subnet from Home Assistant."
+                "It may be off or unplugged, or on a network not listed in its options."
             )
         await self.coordinator.async_refresh()
